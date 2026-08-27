@@ -1,86 +1,25 @@
-import { chromium, type Page } from 'playwright';
-import nodemailer from 'nodemailer';
-import { readFile, writeFile } from 'node:fs/promises';
+import { chromium } from 'playwright';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const URL = process.env.SEARCH_URL ?? 'https://recrutement.education.gouv.fr/recrutement/offres?term=lettres&Region__c=11';
-const STATE_FILE = process.env.STATE_FILE ?? 'data/seen.json';
+const STATE_FILE = 'data/seen.json';
+const PAGE_FILE = 'public/index.html';
 const keywords = ['lettres', 'français'];
+type Offer = { id: string; title: string; url: string; foundAt: string };
 
-type Offer = { id: string; title: string; location: string; url: string; text: string };
-
-async function textOf(page: Page): Promise<string> {
-  return (await page.locator('body').innerText()).replace(/\\s+/g, ' ').trim();
-}
-
-async function scrape(): Promise<Offer[]> {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage();
-    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
-    await page.waitForTimeout(2_000);
-
-    const offers = await page.locator('a').evaluateAll((anchors) => anchors.map((anchor) => {
-      const a = anchor as HTMLAnchorElement;
-      const text = (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim();
-      return { title: text, url: a.href };
-    }).filter((item) => item.title && item.url));
-
-    return offers
-      .filter((item) => keywords.some((keyword) => item.title.toLocaleLowerCase('fr-FR').includes(keyword)))
-      .map((item) => ({
-        id: item.url,
-        title: item.title,
-        location: '',
-        url: item.url,
-        text: item.title,
-      }));
-  } finally {
-    await browser.close();
-  }
-}
-
-async function loadSeen(): Promise<Set<string>> {
-  try {
-    const content = await readFile(STATE_FILE, 'utf8');
-    return new Set(JSON.parse(content) as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-async function saveSeen(seen: Set<string>): Promise<void> {
-  await writeFile(STATE_FILE, `${JSON.stringify([...seen].slice(-2_000), null, 2)}\\n`);
-}
-
-async function notify(offers: Offer[]): Promise<void> {
-  if (offers.length === 0) return;
-  const { GMAIL_USER, GMAIL_APP_PASSWORD, ALERT_TO } = process.env;
-  if (!GMAIL_USER || !GMAIL_APP_PASSWORD || !ALERT_TO) {
-    throw new Error('Missing GMAIL_USER, GMAIL_APP_PASSWORD or ALERT_TO secrets');
-  }
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-  });
-  const html = offers.map((offer) => `<p><strong>${escapeHtml(offer.title)}</strong><br><a href="${offer.url}">${offer.url}</a></p>`).join('');
-  await transporter.sendMail({
-    from: GMAIL_USER,
-    to: ALERT_TO,
-    subject: `Nouvelles offres Lilmac (${offers.length})`,
-    text: offers.map((offer) => `${offer.title}\\n${offer.url}`).join('\\n\\n'),
-    html,
-  });
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character);
-}
-
-const found = await scrape();
-const seen = await loadSeen();
-const fresh = found.filter((offer) => !seen.has(offer.id));
-for (const offer of found) seen.add(offer.id);
-await saveSeen(seen);
-await notify(fresh);
-console.log(`Offres trouvées: ${found.length}; nouvelles: ${fresh.length}`);
+const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c] ?? c);
+const browser = await chromium.launch({ headless: true });
+const page = await browser.newPage();
+await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+await page.waitForTimeout(2_000);
+const foundAt = new Date().toISOString();
+const links = await page.locator('a').evaluateAll(as => as.map(a => ({ title: (a.textContent ?? '').replace(/\s+/g, ' ').trim(), url: (a as HTMLAnchorElement).href })));
+await browser.close();
+const offers: Offer[] = links.filter(x => x.title && keywords.some(k => x.title.toLocaleLowerCase('fr-FR').includes(k))).map(x => ({ ...x, id: x.url, foundAt }));
+let seen: string[] = [];
+try { seen = JSON.parse(await readFile(STATE_FILE, 'utf8')) as string[]; } catch {}
+await writeFile(STATE_FILE, `${JSON.stringify([...new Set([...seen, ...offers.map(o => o.id)])].slice(-2000), null, 2)}\n`);
+await mkdir('public', { recursive: true });
+const rows = offers.length ? offers.map(o => `<article><time>${new Date(o.foundAt).toLocaleString('fr-FR')}</time><h2>${esc(o.title)}</h2><a href="${esc(o.url)}" target="_blank" rel="noopener">Voir l’offre</a></article>`).join('') : '<p>Aucune offre trouvée lors de la dernière recherche.</p>';
+await writeFile(PAGE_FILE, `<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Veille emploi professeur de français</title><style>body{font-family:system-ui;max-width:850px;margin:40px auto;padding:0 20px;background:#f6f8fb;color:#172033}main{background:#fff;padding:28px;border-radius:16px}article{border-top:1px solid #ddd;padding:18px 0}time{color:#64748b}a{color:#2563eb}</style><main><h1>Veille emploi — professeur de français</h1><p>Offres en Île-de-France. Mise à jour : ${new Date().toLocaleString('fr-FR')}</p>${rows}</main></html>\n`);
+console.log(`Offres trouvées: ${offers.length}; page générée: ${PAGE_FILE}`);
