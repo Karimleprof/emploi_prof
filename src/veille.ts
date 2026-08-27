@@ -39,4 +39,12 @@ await writeFile(STATE_FILE, `${JSON.stringify([...new Set([...seen, ...offers.ma
 await mkdir('public', { recursive: true });
 const rows = offers.length ? offers.map(o => `<article><time>${new Date(o.foundAt).toLocaleString('fr-FR')}</time><h2>${esc(o.title)}</h2><a href="${esc(o.url)}" target="_blank" rel="noopener">Voir l’offre</a></article>`).join('') : '<p>Aucune offre trouvée lors de la dernière recherche.</p>';
 await writeFile(PAGE_FILE, `<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Veille emploi professeur de français</title><style>body{font-family:system-ui;max-width:850px;margin:40px auto;padding:0 20px;background:#f6f8fb;color:#172033}main{background:#fff;padding:28px;border-radius:16px}article{border-top:1px solid #ddd;padding:18px 0}time{color:#64748b}a{color:#2563eb}</style><main><h1>Veille emploi — professeur de français</h1><p>Offres en Île-de-France. Mise à jour : ${new Date().toLocaleString('fr-FR')}</p>${rows}</main></html>\n`);
+const fresh = offers.filter(o => !seen.includes(o.id));
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const chatId = process.env.TELEGRAM_CHAT_ID;
+if (fresh.length && token && chatId) {
+  const message = `🔔 Nouvelles offres (${fresh.length})\n\n${fresh.map(o => `📅 ${new Date(o.foundAt).toLocaleString('fr-FR')}\n💼 ${o.title}\n🔗 ${o.url}`).join('\n\n')}`;
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: message }) });
+  if (!response.ok) throw new Error(`Telegram notification failed: ${response.status}`);
+}
 console.log(`Offres trouvées: ${offers.length}; page générée: ${PAGE_FILE}`);
