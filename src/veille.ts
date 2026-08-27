@@ -9,7 +9,7 @@ const keywords = ['lettres', 'français'];
 type Offer = { id: string; title: string; location: string; url: string; text: string };
 
 async function textOf(page: Page): Promise<string> {
-  return (await page.locator('body').innerText()).replace(/\s+/g, ' ').trim();
+  return (await page.locator('body').innerText()).replace(/\\s+/g, ' ').trim();
 }
 
 async function scrape(): Promise<Offer[]> {
@@ -22,7 +22,7 @@ async function scrape(): Promise<Offer[]> {
 
     const offers = await page.locator('a').evaluateAll((anchors) => anchors.map((anchor) => {
       const a = anchor as HTMLAnchorElement;
-      const text = (a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim();
+      const text = (a.innerText || a.textContent || '').replace(/\\s+/g, ' ').trim();
       return { title: text, url: a.href };
     }).filter((item) => item.title && item.url));
 
@@ -67,8 +67,8 @@ async function notify(offers: Offer[]): Promise<void> {
   await transporter.sendMail({
     from: GMAIL_USER,
     to: ALERT_TO,
-    subject: `Nouvelles offres professeur de français (${offers.length})`,
-    text: offers.map((offer) => `${offer.title}\n${offer.url}`).join('\n\n'),
+    subject: `Nouvelles offres Lilmac (${offers.length})`,
+    text: offers.map((offer) => `${offer.title}\\n${offer.url}`).join('\\n\\n'),
     html,
   });
 }
