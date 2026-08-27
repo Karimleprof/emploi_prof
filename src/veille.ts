@@ -11,11 +11,22 @@ const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;'
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-await page.waitForTimeout(2_000);
+await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+await page.waitForTimeout(8_000);
 const foundAt = new Date().toISOString();
-const links = await page.locator('a').evaluateAll(as => as.map(a => ({ title: (a.textContent ?? '').replace(/\s+/g, ' ').trim(), url: (a as HTMLAnchorElement).href })));
+const links = await page.locator('a').evaluateAll(as => as.map(a => {
+  let node: Element | null = a;
+  let card = '';
+  for (let i = 0; i < 6 && node; i++, node = node.parentElement) {
+    const text = (node.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (text.length > card.length && text.length < 1200) card = text;
+  }
+  const title = (a.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const cardTitle = card.split(/(?=Professeur|Enseignant|Chargé|Chargée)/i).find(x => /lettres|français/i.test(x))?.trim();
+  return { title: cardTitle || title, url: (a as HTMLAnchorElement).href, card };
+}));
 await browser.close();
-const offers: Offer[] = links.filter(x => x.title && keywords.some(k => x.title.toLocaleLowerCase('fr-FR').includes(k))).map(x => ({ ...x, id: x.url, foundAt }));
+const offers: Offer[] = links.filter(x => x.url && keywords.some(k => `${x.title} ${x.card}`.toLocaleLowerCase('fr-FR').includes(k))).map(x => ({ id: x.url, title: x.title || 'Offre professeur de français', url: x.url, foundAt })).filter((o, i, all) => all.findIndex(x => x.id === o.id) === i);
 let seen: string[] = [];
 try { seen = JSON.parse(await readFile(STATE_FILE, 'utf8')) as string[]; } catch {}
 await writeFile(STATE_FILE, `${JSON.stringify([...new Set([...seen, ...offers.map(o => o.id)])].slice(-2000), null, 2)}\n`);
