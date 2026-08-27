@@ -42,8 +42,9 @@ await writeFile(PAGE_FILE, `<!doctype html><html lang="fr"><meta charset="utf-8"
 const fresh = offers.filter(o => !seen.includes(o.id));
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
-if (fresh.length && token && chatId) {
-  const message = `🔔 Nouvelles offres (${fresh.length})\n\n${fresh.map(o => `📅 ${new Date(o.foundAt).toLocaleString('fr-FR')}\n💼 ${o.title}\n🔗 ${o.url}`).join('\n\n')}`;
+const isTest = process.env.TEST_NOTIFICATION === 'true';
+if ((fresh.length || isTest) && token && chatId) {
+  const message = isTest ? '✅ Test réussi : la veille peut vous envoyer des notifications Telegram.' : `🔔 Nouvelles offres (${fresh.length})\n\n${fresh.map(o => `📅 ${new Date(o.foundAt).toLocaleString('fr-FR')}\n💼 ${o.title}\n🔗 ${o.url}`).join('\n\n')}`;
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: message }) });
   if (!response.ok) throw new Error(`Telegram notification failed: ${response.status}`);
 }
