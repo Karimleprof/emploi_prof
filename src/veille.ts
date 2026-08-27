@@ -12,6 +12,12 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+await page.waitForTimeout(3_000);
+const search = page.locator('input').first();
+if (await search.count()) {
+  await search.fill('lettres');
+  await search.press('Enter');
+}
 await page.waitForTimeout(8_000);
 const foundAt = new Date().toISOString();
 const links = await page.locator('a').evaluateAll(as => as.map(a => {
