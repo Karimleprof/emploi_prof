@@ -44,8 +44,8 @@ jobs:
           git diff --cached --quiet || git commit -m 'chore: update veille emploi'
           git pull --rebase origin main
           git push origin HEAD:main
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: public
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
