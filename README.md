@@ -1,17 +1,22 @@
 # Veille emploi professeur de lettres
 
-Le workflow ouvre la page dynamique de recrutement, recherche les offres liées à `lettres` ou `français`, puis envoie uniquement les nouvelles offres par Gmail.
+Le workflow ouvre la page dynamique de recrutement de l'Éducation nationale, recherche les offres liées à `lettres` ou `français` en Île-de-France, et envoie un message **Telegram** pour chaque nouvelle offre.
 
-## Installation GitHub
+## Mise en place
 
-1. Copiez ces fichiers dans le dépôt `Karimleprof/emploi_prof`.
-2. Lancez `npm install` puis commitez aussi `package-lock.json`.
-3. Dans **Settings → Secrets and variables → Actions**, créez :
-   - `GMAIL_USER` : votre adresse Gmail ;
-   - `GMAIL_APP_PASSWORD` : un mot de passe d’application Google à 16 caractères ;
-   - `ALERT_TO` : l’adresse recevant les alertes.
-4. Dans **Actions**, lancez une fois le workflow manuellement pour vérifier la configuration.
+1. Créez un bot Telegram avec [@BotFather](https://t.me/BotFather) pour obtenir un `TELEGRAM_BOT_TOKEN`.
+2. Récupérez votre `TELEGRAM_CHAT_ID` (par exemple en envoyant un message à votre bot puis en interrogeant `https://api.telegram.org/bot<TOKEN>/getUpdates`).
+3. Dans le dépôt GitHub : **Settings → Secrets and variables → Actions**, créez :
+   - `TELEGRAM_BOT_TOKEN` : le jeton fourni par BotFather ;
+   - `TELEGRAM_CHAT_ID` : votre identifiant de conversation.
+4. Ne mettez jamais ces valeurs dans le code ni dans les fichiers du dépôt.
 
-Le mot de passe d’application nécessite la validation en deux étapes sur le compte Google. Ne mettez jamais le mot de passe Gmail principal dans le dépôt.
+## Test
 
-Le workflow est ensuite planifié toutes les deux heures, à la 17e minute, en UTC. Les offres déjà envoyées sont conservées dans `data/seen.json`.
+Dans l'onglet **Actions**, ouvrez *Veille offres professeur de lettres* → **Run workflow**, puis cochez **Envoyer un message Telegram de test**. Vous devez recevoir immédiatement un message de confirmation.
+
+## Fonctionnement
+
+- Exécution automatique toutes les **2 heures** (à la 17e minute, heure UTC).
+- Déduplication par **titre + date de publication** : vous n'êtes alerté que pour les offres réellement nouvelles.
+- Les offres déjà vues sont conservées dans `data/seen.json`.

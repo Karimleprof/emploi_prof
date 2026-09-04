@@ -1,12 +1,11 @@
 import { chromium } from 'playwright';
-import nodemailer from 'nodemailer';
 import { readFile, writeFile } from 'node:fs/promises';
 
 const URL = process.env.SEARCH_URL ?? 'https://recrutement.education.gouv.fr/recrutement/offres?term=lettres&Region__c=11';
 const STATE_FILE = process.env.STATE_FILE ?? 'data/seen.json';
 const KEYWORDS = ['lettres', 'français'];
 
-type Offer = { key: string; title: string; academy: string; date: string; location: string; url: string };
+type Offer = { key: string; title: string; academy: string; date: string; url: string };
 
 const normalize = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
@@ -27,7 +26,6 @@ async function scrape(): Promise<Offer[]> {
       }),
     );
 
-    const seenText = cards.map((card) => card.full).join(' ');
     const result: Offer[] = [];
     for (const card of cards) {
       if (!KEYWORDS.some((keyword) => card.full.toLocaleLowerCase('fr-FR').includes(keyword))) continue;
@@ -40,12 +38,8 @@ async function scrape(): Promise<Offer[]> {
         title,
         academy: academyLine ? academyLine.replace(/^Académie\s+(de\s+)?/i, '') : '',
         date,
-        location: academyLine ?? '',
         url: URL,
       });
-    }
-    if (result.length === 0) {
-      console.error('Aucun résultat exploitable. Texte de la page:', seenText.slice(0, 1_000));
     }
     return result;
   } finally {
@@ -66,34 +60,18 @@ async function saveSeen(seen: Set<string>): Promise<void> {
   await writeFile(STATE_FILE, `${JSON.stringify([...seen].slice(-5_000), null, 2)}\n`);
 }
 
-async function notify(offers: Offer[]): Promise<void> {
-  if (offers.length === 0) {
-    console.log('Aucune nouvelle offre — pas d’envoi.');
+async function notifyTelegram(text: string): Promise<void> {
+  const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn('Secrets Telegram absents — envoi ignoré (exécution locale).');
     return;
   }
-  const { GMAIL_USER, GMAIL_APP_PASSWORD, ALERT_TO } = process.env;
-  if (!GMAIL_USER || !GMAIL_APP_PASSWORD || !ALERT_TO) {
-    console.warn('Secrets Gmail absents — envoi ignoré (exécution locale).');
-    return;
-  }
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
   });
-  const lines = offers.map((offer) => `${offer.title}\n${offer.academy} — publié le ${offer.date}\n${offer.url}`);
-  await transporter.sendMail({
-    from: GMAIL_USER,
-    to: ALERT_TO,
-    subject: `Nouvelles offres Lilmac (${offers.length})`,
-    text: lines.join('\n\n'),
-    html: offers
-      .map((offer) => `<p><strong>${escapeHtml(offer.title)}</strong><br>${escapeHtml(offer.academy)} — publié le ${escapeHtml(offer.date)}<br><a href="${offer.url}">${offer.url}</a></p>`)
-      .join(''),
-  });
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character);
+  if (!response.ok) throw new Error(`Échec envoi Telegram: ${response.status} ${await response.text()}`);
 }
 
 const found = await scrape();
@@ -101,6 +79,18 @@ const seen = await loadSeen();
 const fresh = found.filter((offer) => !seen.has(offer.key));
 for (const offer of found) seen.add(offer.key);
 await saveSeen(seen);
+
 console.log(`Offres trouvées: ${found.length}; nouvelles: ${fresh.length}`);
 for (const offer of fresh) console.log(`- ${offer.title} (${offer.academy}, publié le ${offer.date})`);
-await notify(fresh);
+
+const isTest = process.env.TEST_NOTIFICATION === 'true';
+if (isTest) {
+  await notifyTelegram(`✅ Test réussi : la veille peut vous envoyer des notifications Telegram.\n\nDernière vérification : ${found.length} offre(s) trouvée(s), ${fresh.length} nouvelle(s).`);
+} else if (fresh.length > 0) {
+  const message = `🔔 Nouvelles offres (${fresh.length})\n\n${fresh
+    .map((offer) => `💼 ${offer.title}\n🏫 ${offer.academy}\n📅 Publié le ${offer.date}\n🔗 ${offer.url}`)
+    .join('\n\n')}`;
+  await notifyTelegram(message);
+} else {
+  console.log('Aucune nouvelle offre — pas d’envoi.');
+}

@@ -2,6 +2,12 @@ name: Veille offres professeur de lettres
 
 on:
   workflow_dispatch:
+    inputs:
+      test_notification:
+        description: 'Envoyer un message Telegram de test'
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: '17 */2 * * *'
 
@@ -23,10 +29,10 @@ jobs:
       - run: npm run check
       - run: npm run scrape
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          ALERT_TO: ${{ secrets.ALERT_TO }}
-      - name: Persist seen offers
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_NOTIFICATION: ${{ inputs.test_notification }}
+      - name: Enregistrer les offres déjà vues
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
