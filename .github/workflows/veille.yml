@@ -1,27 +1,17 @@
 name: Veille offres professeur de lettres
+
 on:
   workflow_dispatch:
-    inputs:
-      test_notification:
-        description: 'Envoyer un message Telegram de test'
-        required: false
-        type: boolean
-        default: false
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '17 */2 * * *'
+
 permissions:
   contents: write
-  pages: write
-  id-token: write
-concurrency:
-  group: pages
-  cancel-in-progress: false
+
 jobs:
   veille:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -33,19 +23,13 @@ jobs:
       - run: npm run check
       - run: npm run scrape
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TEST_NOTIFICATION: ${{ inputs.test_notification }}
-      - name: Enregistrer la page
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+      - name: Persist seen offers
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/seen.json public/index.html
-          git diff --cached --quiet || git commit -m 'chore: update veille emploi'
-          git pull --rebase origin main
-          git push origin HEAD:main
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: public
-      - id: deployment
-        uses: actions/deploy-pages@v5
+          git add data/seen.json
+          git diff --cached --quiet || git commit -m 'chore: update veille state'
+          git push
